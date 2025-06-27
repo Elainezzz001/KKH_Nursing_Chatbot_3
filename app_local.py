@@ -1,39 +1,18 @@
-"""
-Cloud-optimized version of the KKH Nursing Chatbot for Streamlit deployment
-This version includes fallback options for LLM integration and optimized performance
-"""
 import streamlit as st
 import os
 from PIL import Image
-import base64
-
-# Import cloud-optimized utilities
-try:
-    from cloud_utils import query_llm_cloud, load_embeddings_cloud, create_lightweight_app
-    from streamlit_config import get_cloud_config
-    IS_CLOUD = True
-except ImportError:
-    # Fallback to local imports
-    from utils import *
-    from config import *
-    IS_CLOUD = False
-
-# Cloud-specific configuration
-if IS_CLOUD:
-    config = get_cloud_config()
-    EMBEDDING_MODEL = config["embedding_model"]
-    PDF_PATH = config["pdf_path"]
-    LOGO_PATH = config["logo_path"]
+from utils import *
+from config import *
 
 # Page configuration
 st.set_page_config(
-    page_title="KKH Nursing Chatbot",
-    page_icon="🏥",
+    page_title=APP_TITLE,
+    page_icon=APP_ICON,
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for styling (optimized for cloud)
+# Custom CSS for styling
 st.markdown("""
 <style>
     .main-header {
@@ -61,18 +40,32 @@ st.markdown("""
         border-left: 4px solid #9c27b0;
     }
     
+    .quiz-container {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 10px;
+        border: 1px solid #dee2e6;
+    }
+    
+    .fluid-calc-container {
+        background-color: #fff3cd;
+        padding: 1rem;
+        border-radius: 10px;
+        border: 1px solid #ffeaa7;
+    }
+    
+    .metric-container {
+        background-color: #d4edda;
+        padding: 1rem;
+        border-radius: 10px;
+        border: 1px solid #c3e6cb;
+        text-align: center;
+    }
+    
     .sidebar-section {
         background-color: #f8f9fa;
         padding: 1rem;
         border-radius: 10px;
-        margin-bottom: 1rem;
-    }
-    
-    .cloud-banner {
-        background-color: #fff3cd;
-        padding: 0.5rem;
-        border-radius: 5px;
-        border-left: 4px solid #ffc107;
         margin-bottom: 1rem;
     }
 </style>
@@ -104,73 +97,42 @@ def initialize_session_state():
     if 'quiz_active' not in st.session_state:
         st.session_state.quiz_active = False
 
-# Cloud-optimized knowledge base loading
+# Load knowledge base
 @st.cache_data
-def load_knowledge_base_cloud():
-    """Load knowledge base with cloud optimizations"""
-    if IS_CLOUD:
-        config = get_cloud_config()
-        pdf_path = config["pdf_path"]
+def load_knowledge_base():
+    if os.path.exists(PDF_PATH):
+        embeddings, chunks = initialize_knowledge_base()
+        return embeddings, chunks
     else:
-        pdf_path = PDF_PATH
-    
-    if os.path.exists(pdf_path):
-        try:
-            if IS_CLOUD:
-                from utils import load_and_process_pdf, create_embeddings
-                chunks = load_and_process_pdf(pdf_path)
-                # Limit chunks for cloud performance
-                chunks = chunks[:config.get("max_chunks", 100)]
-                embeddings, _ = create_embeddings(chunks, config["embedding_model"])
-            else:
-                embeddings, chunks = initialize_knowledge_base()
-            return embeddings, chunks
-        except Exception as e:
-            st.error(f"Error loading knowledge base: {e}")
-            return [], []
-    else:
-        st.error(f"PDF file not found: {pdf_path}")
+        st.error(f"PDF file not found: {PDF_PATH}")
         return [], []
 
-# Main chatbot function (cloud-optimized)
+# Main chatbot function
 def chatbot_interface():
-    # Cloud deployment banner
-    if IS_CLOUD:
-        st.markdown("""
-        <div class="cloud-banner">
-            <strong>☁️ Cloud Deployment:</strong> This chatbot is running on Streamlit Cloud. 
-            Some features may have limited functionality compared to the local version.
-        </div>
-        """, unsafe_allow_html=True)
-    
     # Create header with logo and title
     logo_html = ""
-    logo_path = LOGO_PATH if not IS_CLOUD else config["logo_path"]
-    
-    if os.path.exists(logo_path):
+    if os.path.exists(LOGO_PATH):
         try:
-            with open(logo_path, "rb") as img_file:
+            import base64
+            with open(LOGO_PATH, "rb") as img_file:
                 logo_base64 = base64.b64encode(img_file.read()).decode()
             logo_html = f'<img src="data:image/jpeg;base64,{logo_base64}" style="height: 60px; margin-right: 20px; vertical-align: middle;">'
         except:
             pass
     
-    app_title = "KKH Nursing Chatbot" + (" (Cloud)" if IS_CLOUD else "")
-    app_description = "Your AI assistant for nursing knowledge and pediatric care"
-    
     st.markdown(f'''
     <div class="main-header">
         <h1 style="display: inline-flex; align-items: center; justify-content: center; margin: 0;">
-            {logo_html}{app_title}
+            {logo_html}{APP_TITLE}
         </h1>
-        <p style="margin: 10px 0 0 0;">{app_description}</p>
+        <p style="margin: 10px 0 0 0;">{APP_DESCRIPTION}</p>
     </div>
     ''', unsafe_allow_html=True)
     
     # Load knowledge base
     if not st.session_state.knowledge_embeddings:
         with st.spinner("Loading knowledge base..."):
-            embeddings, chunks = load_knowledge_base_cloud()
+            embeddings, chunks = load_knowledge_base()
             st.session_state.knowledge_embeddings = embeddings
             st.session_state.knowledge_chunks = chunks
     
@@ -196,20 +158,14 @@ def chatbot_interface():
         # Find relevant information and get response
         with st.spinner("Searching knowledge base..."):
             if st.session_state.knowledge_embeddings and st.session_state.knowledge_chunks:
-                if IS_CLOUD:
-                    from utils import find_most_relevant_chunk
-                
                 relevant_chunk = find_most_relevant_chunk(
                     user_input, 
                     st.session_state.knowledge_embeddings, 
                     st.session_state.knowledge_chunks
                 )
                 
-                # Query LLM (cloud-optimized)
-                if IS_CLOUD:
-                    response = query_llm_cloud(relevant_chunk, user_input)
-                else:
-                    response = query_llm(relevant_chunk, user_input)
+                # Query LLM
+                response = query_llm(relevant_chunk, user_input)
                 
                 # Add bot response to chat history
                 st.session_state.chat_history.append({"role": "assistant", "content": response})
@@ -219,7 +175,7 @@ def chatbot_interface():
         
         st.rerun()
 
-# Fluid calculator sidebar (unchanged - works perfectly in cloud)
+# Fluid calculator sidebar
 def fluid_calculator_sidebar():
     st.sidebar.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
     st.sidebar.subheader("💧 Pediatric Fluid Calculator")
@@ -261,7 +217,7 @@ def fluid_calculator_sidebar():
     
     st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
-# Quiz sidebar (cloud-optimized)
+# Quiz sidebar
 def quiz_sidebar():
     st.sidebar.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
     st.sidebar.subheader("📚 Nursing Knowledge Quiz")
@@ -270,21 +226,14 @@ def quiz_sidebar():
     if not st.session_state.quiz_questions and st.session_state.knowledge_chunks:
         if st.sidebar.button("Start New Quiz", type="primary"):
             with st.spinner("Generating quiz questions..."):
-                if IS_CLOUD:
-                    from utils import generate_quiz_questions
-                    # Limit questions for cloud performance
-                    max_questions = 10
-                else:
-                    max_questions = 15
-                
-                st.session_state.quiz_questions = generate_quiz_questions(st.session_state.knowledge_chunks, max_questions)
+                st.session_state.quiz_questions = generate_quiz_questions(st.session_state.knowledge_chunks, 15)
                 st.session_state.quiz_index = 0
                 st.session_state.quiz_score = 0
                 st.session_state.quiz_answers = []
                 st.session_state.quiz_active = True
             st.rerun()
     
-    # Display quiz if active (same logic as original)
+    # Display quiz if active
     if st.session_state.quiz_active and st.session_state.quiz_questions:
         current_q_index = st.session_state.quiz_index
         total_questions = len(st.session_state.quiz_questions)
@@ -333,6 +282,7 @@ def quiz_sidebar():
                     elif question['type'] == 'true_false':
                         correct = user_answer == question['correct']
                     elif question['type'] == 'open_ended':
+                        # For open-ended, give credit if answer is not empty
                         correct = len(str(user_answer).strip()) > 10
                     
                     if correct:
@@ -389,26 +339,12 @@ def additional_features_sidebar():
     if st.sidebar.button("Reload Knowledge Base"):
         st.session_state.knowledge_embeddings = []
         st.session_state.knowledge_chunks = []
-        if not IS_CLOUD:
-            st.cache_data.clear()
+        st.cache_data.clear()
         st.rerun()
     
     # Display knowledge base stats
     if st.session_state.knowledge_chunks:
-        chunk_count = len(st.session_state.knowledge_chunks)
-        st.sidebar.info(f"📊 Knowledge Base: {chunk_count} chunks loaded")
-        
-        if IS_CLOUD and chunk_count >= 100:
-            st.sidebar.warning("⚡ Cloud mode: Limited to 100 chunks for performance")
-    
-    # Cloud-specific info
-    if IS_CLOUD:
-        with st.sidebar.expander("☁️ Cloud Deployment Info"):
-            st.write("Running on Streamlit Cloud")
-            if config.get("use_openai"):
-                st.success("✅ OpenAI API enabled")
-            else:
-                st.info("ℹ️ Using fallback responses")
+        st.sidebar.info(f"📊 Knowledge Base: {len(st.session_state.knowledge_chunks)} chunks loaded")
     
     st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
@@ -417,12 +353,12 @@ def main():
     initialize_session_state()
     
     # Sidebar
-    st.sidebar.title("🏥 KKH Nursing Tools" + (" (Cloud)" if IS_CLOUD else ""))
+    st.sidebar.title("🏥 KKH Nursing Tools")
     
-    # Fluid calculator (works perfectly in cloud)
+    # Fluid calculator
     fluid_calculator_sidebar()
     
-    # Quiz (cloud-optimized)
+    # Quiz
     quiz_sidebar()
     
     # Additional features
@@ -433,11 +369,10 @@ def main():
     
     # Footer
     st.markdown("---")
-    deployment_text = "Deployed on Streamlit Cloud" if IS_CLOUD else "Running Locally"
     st.markdown(
-        f"""
+        """
         <div style='text-align: center; color: #666; padding: 1rem;'>
-            <p>KKH Nursing Chatbot • Built with Streamlit • {deployment_text}</p>
+            <p>KKH Nursing Chatbot • Built with Streamlit • Powered by AI</p>
             <p><small>For educational purposes only. Always consult official protocols and senior staff.</small></p>
         </div>
         """, 
